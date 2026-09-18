@@ -68,9 +68,38 @@ export function calculateTurfBBox(
   geometry: GeoJSONPolygon
 ): [number, number, number, number] | null {
   try {
-    const polygon = turf.polygon(geometry.coordinates);
-    const bbox = turf.bbox(polygon);
-    return bbox as [number, number, number, number];
+    if (
+      !geometry ||
+      !geometry.coordinates ||
+      !Array.isArray(geometry.coordinates) ||
+      geometry.coordinates.length === 0
+    ) {
+      return null;
+    }
+    let minLng = Infinity;
+    let minLat = Infinity;
+    let maxLng = -Infinity;
+    let maxLat = -Infinity;
+
+    for (const ring of geometry.coordinates) {
+      if (!Array.isArray(ring)) continue;
+      for (const pt of ring) {
+        if (!Array.isArray(pt) || pt.length < 2) continue;
+        const lng = Number(pt[0]);
+        const lat = Number(pt[1]);
+        if (isNaN(lng) || isNaN(lat)) continue;
+        if (lng < minLng) minLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lng > maxLng) maxLng = lng;
+        if (lat > maxLat) maxLat = lat;
+      }
+    }
+
+    if (!isFinite(minLng) || !isFinite(minLat) || !isFinite(maxLng) || !isFinite(maxLat)) {
+      return null;
+    }
+
+    return [minLng, minLat, maxLng, maxLat];
   } catch {
     return null;
   }
@@ -112,9 +141,34 @@ export function calculateSitesBBox(sites: MapSite[]): [number, number, number, n
  */
 export function calculateTurfCentroid(geometry: GeoJSONPolygon): [number, number] | null {
   try {
-    const polygon = turf.polygon(geometry.coordinates);
-    const centroid = turf.centroid(polygon);
-    return centroid.geometry.coordinates as [number, number];
+    if (
+      !geometry ||
+      !geometry.coordinates ||
+      !Array.isArray(geometry.coordinates) ||
+      geometry.coordinates.length === 0
+    ) {
+      return null;
+    }
+    const ring = geometry.coordinates[0];
+    if (!Array.isArray(ring) || ring.length === 0) return null;
+
+    let sumLng = 0;
+    let sumLat = 0;
+    let count = 0;
+
+    for (const pt of ring) {
+      if (!Array.isArray(pt) || pt.length < 2) continue;
+      const lng = Number(pt[0]);
+      const lat = Number(pt[1]);
+      if (!isNaN(lng) && !isNaN(lat)) {
+        sumLng += lng;
+        sumLat += lat;
+        count++;
+      }
+    }
+
+    if (count === 0) return null;
+    return [Number((sumLng / count).toFixed(5)), Number((sumLat / count).toFixed(5))];
   } catch {
     return null;
   }
@@ -157,10 +211,20 @@ export async function fetchMapData(): Promise<MapData> {
       let perimeterKm = 0;
       let coordsText = "Coordinates Pending";
 
-      if (site.geometry && site.geometry.coordinates) {
+      let geom = site.geometry;
+      if (typeof geom === "string") {
+        try {
+          geom = JSON.parse(geom);
+          site.geometry = geom;
+        } catch {
+          // ignore
+        }
+      }
+
+      if (geom && geom.coordinates) {
         const polyGeo: GeoJSONPolygon = {
           type: "Polygon",
-          coordinates: site.geometry.coordinates,
+          coordinates: geom.coordinates,
         };
         const c = calculateTurfCentroid(polyGeo);
         if (c) {
@@ -246,25 +310,43 @@ export function buildSitesFeatureCollection(sites: MapSite[]) {
   return {
     type: "FeatureCollection" as const,
     features: sites
-      .filter((s) => s.geometry && s.geometry.coordinates && s.geometry.coordinates.length > 0)
-      .map((s) => ({
-        type: "Feature" as const,
-        id: s.id,
-        geometry: {
-          type: "Polygon" as const,
-          coordinates: s.geometry.coordinates,
-        },
-        properties: {
+      .map((s) => {
+        let geom = s.geometry;
+        if (typeof geom === "string") {
+          try {
+            geom = JSON.parse(geom);
+          } catch {
+            return null;
+          }
+        }
+        if (
+          !geom ||
+          !geom.coordinates ||
+          !Array.isArray(geom.coordinates) ||
+          geom.coordinates.length === 0
+        ) {
+          return null;
+        }
+        return {
+          type: "Feature" as const,
           id: s.id,
-          name: s.name,
-          project_id: s.project_id,
-          project_name: s.project_name || "Initiative",
-          area: s.area || 0,
-          carbon_score: s.carbon_score || 80,
-          bio_score: s.bio_score || 75,
-          health_index: s.health_index || 78,
-          health_status: s.health_status || "Moderate",
-        },
-      })),
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: geom.coordinates,
+          },
+          properties: {
+            id: s.id,
+            name: s.name,
+            project_id: s.project_id,
+            project_name: s.project_name || "Initiative",
+            area: s.area || 0,
+            carbon_score: s.carbon_score || 80,
+            bio_score: s.bio_score || 75,
+            health_index: s.health_index || 78,
+            health_status: s.health_status || "Moderate",
+          },
+        };
+      })
+      .filter((f): f is NonNullable<typeof f> => f !== null),
   };
 }

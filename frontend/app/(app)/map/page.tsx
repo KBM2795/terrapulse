@@ -84,6 +84,269 @@ const OPEN_SATELLITE_STYLE = {
   ],
 };
 
+// High-contrast, comprehensive MapboxDraw styles supporting active LineString tracing and satellite mode
+const DRAW_STYLES = [
+  // 1. Active polygon fill (in-progress closed polygon)
+  {
+    id: "gl-draw-polygon-fill-active",
+    type: "fill",
+    filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "true"]],
+    paint: {
+      "fill-color": "#EBF1B1",
+      "fill-opacity": 0.35,
+    },
+  },
+  // 2. Inactive polygon fill (completed polygon before saving)
+  {
+    id: "gl-draw-polygon-fill-static",
+    type: "fill",
+    filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "false"]],
+    paint: {
+      "fill-color": "#10B981",
+      "fill-opacity": 0.3,
+    },
+  },
+  // 3. Active line casing (black drop-shadow casing for contrast against satellite imagery)
+  {
+    id: "gl-draw-line-casing-active",
+    type: "line",
+    filter: ["all", ["==", "active", "true"]],
+    paint: {
+      "line-color": "#000000",
+      "line-width": 5.5,
+      "line-opacity": 0.7,
+    },
+  },
+  // 4. Active line stroke (CRITICAL: matches LineString while actively clicking and tracing boundary vertices!)
+  {
+    id: "gl-draw-line-active",
+    type: "line",
+    filter: ["all", ["==", "active", "true"]],
+    paint: {
+      "line-color": "#EBF1B1",
+      "line-width": 3,
+      "line-dasharray": [2, 1],
+    },
+  },
+  // 5. Inactive line stroke
+  {
+    id: "gl-draw-line-static",
+    type: "line",
+    filter: ["all", ["==", "$type", "LineString"], ["==", "active", "false"]],
+    paint: {
+      "line-color": "#10B981",
+      "line-width": 2.5,
+    },
+  },
+  // 6. Inactive polygon stroke
+  {
+    id: "gl-draw-polygon-stroke-static",
+    type: "line",
+    filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "false"]],
+    paint: {
+      "line-color": "#10B981",
+      "line-width": 2.5,
+    },
+  },
+  // 7. Active vertex point
+  {
+    id: "gl-draw-vertex-active",
+    type: "circle",
+    filter: ["all", ["==", "meta", "vertex"], ["==", "active", "true"]],
+    paint: {
+      "circle-radius": 7,
+      "circle-color": "#EBF1B1",
+      "circle-stroke-width": 2.5,
+      "circle-stroke-color": "#161A12",
+    },
+  },
+  // 8. Inactive vertex points
+  {
+    id: "gl-draw-vertex-inactive",
+    type: "circle",
+    filter: ["all", ["==", "meta", "vertex"], ["==", "active", "false"]],
+    paint: {
+      "circle-radius": 5,
+      "circle-color": "#FFFFFF",
+      "circle-stroke-width": 2,
+      "circle-stroke-color": "#3D422E",
+    },
+  },
+  // 9. Midpoint points between vertices
+  {
+    id: "gl-draw-midpoint",
+    type: "circle",
+    filter: ["all", ["==", "meta", "midpoint"]],
+    paint: {
+      "circle-radius": 4.5,
+      "circle-color": "#EBF1B1",
+      "circle-stroke-width": 2,
+      "circle-stroke-color": "#161A12",
+    },
+  },
+  // 10. General point active (start vertex or initial click)
+  {
+    id: "gl-draw-point-active",
+    type: "circle",
+    filter: ["all", ["==", "$type", "Point"], ["!=", "meta", "midpoint"], ["==", "active", "true"]],
+    paint: {
+      "circle-radius": 7,
+      "circle-color": "#EBF1B1",
+      "circle-stroke-width": 2.5,
+      "circle-stroke-color": "#161A12",
+    },
+  },
+  // 11. General point inactive
+  {
+    id: "gl-draw-point-inactive",
+    type: "circle",
+    filter: [
+      "all",
+      ["==", "$type", "Point"],
+      ["!=", "meta", "midpoint"],
+      ["==", "active", "false"],
+    ],
+    paint: {
+      "circle-radius": 5,
+      "circle-color": "#FFFFFF",
+      "circle-stroke-width": 2,
+      "circle-stroke-color": "#3D422E",
+    },
+  },
+];
+
+// Reliable style loader that handles styledata, idle, and load without deadlocks
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function onMapStyleReady(mapInstance: any, callback: () => void) {
+  if (!mapInstance) return;
+
+  if (mapInstance.isStyleLoaded()) {
+    callback();
+    return;
+  }
+
+  let executed = false;
+  const runOnce = () => {
+    if (executed) return;
+    if (mapInstance.isStyleLoaded()) {
+      executed = true;
+      mapInstance.off("styledata", runOnce);
+      mapInstance.off("idle", runOnce);
+      mapInstance.off("load", runOnce);
+      callback();
+    }
+  };
+
+  mapInstance.on("styledata", runOnce);
+  mapInstance.on("idle", runOnce);
+  mapInstance.on("load", runOnce);
+}
+
+// Render or update the saved sites GeoJSON source & layers (pure rendering without camera override)
+function applySitesLayer(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mapInstance: any,
+  sitesList: MapSite[],
+  sitesRef: React.MutableRefObject<MapSite[]>,
+  onSelectSite: (site: MapSite) => void
+) {
+  if (!mapInstance) return;
+
+  if (!mapInstance.isStyleLoaded()) {
+    onMapStyleReady(mapInstance, () => {
+      applySitesLayer(mapInstance, sitesList, sitesRef, onSelectSite);
+    });
+    return;
+  }
+
+  const sourceId = "saved-sites-source";
+  const fillLayerId = "saved-sites-fill";
+  const lineLayerId = "saved-sites-line";
+
+  const featureCollection = buildSitesFeatureCollection(sitesList);
+
+  const existingSource = mapInstance.getSource(sourceId);
+  if (existingSource) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (existingSource as any).setData(featureCollection);
+  } else {
+    mapInstance.addSource(sourceId, {
+      type: "geojson",
+      data: featureCollection,
+    });
+
+    // Green filled polygon for saved sites
+    mapInstance.addLayer({
+      id: fillLayerId,
+      type: "fill",
+      source: sourceId,
+      paint: {
+        "fill-color": "#10B981",
+        "fill-opacity": 0.35,
+      },
+    });
+
+    // High-contrast outline border (emerald-lime vivid glow that pops against satellite imagery)
+    mapInstance.addLayer({
+      id: lineLayerId,
+      type: "line",
+      source: sourceId,
+      paint: {
+        "line-color": "#34D399",
+        "line-width": 3,
+      },
+    });
+  }
+
+  // Ensure layers exist if source was preserved across style switch
+  if (!mapInstance.getLayer(fillLayerId) && mapInstance.getSource(sourceId)) {
+    mapInstance.addLayer({
+      id: fillLayerId,
+      type: "fill",
+      source: sourceId,
+      paint: {
+        "fill-color": "#10B981",
+        "fill-opacity": 0.35,
+      },
+    });
+  }
+  if (!mapInstance.getLayer(lineLayerId) && mapInstance.getSource(sourceId)) {
+    mapInstance.addLayer({
+      id: lineLayerId,
+      type: "line",
+      source: sourceId,
+      paint: {
+        "line-color": "#34D399",
+        "line-width": 3,
+      },
+    });
+  }
+
+  // Polygon click event -> Open Site Detail Drawer
+  mapInstance.off("click", fillLayerId);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mapInstance.on("click", fillLayerId, (e: any) => {
+    const feature = e.features?.[0];
+    if (feature && feature.properties) {
+      const clickedId = feature.properties.id;
+      const foundSite = sitesRef.current.find((s) => s.id === clickedId);
+      if (foundSite) {
+        onSelectSite(foundSite);
+      }
+    }
+  });
+
+  // Cursor styling
+  mapInstance.off("mouseenter", fillLayerId);
+  mapInstance.on("mouseenter", fillLayerId, () => {
+    mapInstance.getCanvas().style.cursor = "pointer";
+  });
+  mapInstance.off("mouseleave", fillLayerId);
+  mapInstance.on("mouseleave", fillLayerId, () => {
+    mapInstance.getCanvas().style.cursor = "";
+  });
+}
+
 function MapViewport() {
   const searchParams = useSearchParams();
   const targetProjectId = searchParams.get("project");
@@ -96,12 +359,18 @@ function MapViewport() {
   const drawRef = useRef<any>(null);
 
   const [sites, setSites] = useState<MapSite[]>([]);
+  const sitesRef = useRef<MapSite[]>(sites);
+  useEffect(() => {
+    sitesRef.current = sites;
+  }, [sites]);
+
   const [projects, setProjects] = useState<ProjectData[]>([]);
   const [filterProjectId, setFilterProjectId] = useState<string | null>(null);
   const selectedProjectId = filterProjectId ?? (targetProjectId || "all");
   const [selectedSite, setSelectedSite] = useState<MapSite | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeLayer, setActiveLayer] = useState<"light" | "satellite">("light");
+  const currentLayerRef = useRef<"light" | "satellite">(activeLayer);
   const [refreshIndex, setRefreshIndex] = useState(0);
 
   // Polygon Drawing & Area State
@@ -226,71 +495,21 @@ function MapViewport() {
     []
   );
 
-  // Render or update the saved sites GeoJSON source & layers (pure rendering without camera override)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const renderSavedSitesLayer = useCallback((mapInstance: any, sitesList: MapSite[]) => {
-    if (!mapInstance || !mapInstance.isStyleLoaded()) return;
-
-    const sourceId = "saved-sites-source";
-    const fillLayerId = "saved-sites-fill";
-    const lineLayerId = "saved-sites-line";
-
-    const featureCollection = buildSitesFeatureCollection(sitesList);
-
-    if (mapInstance.getSource(sourceId)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (mapInstance.getSource(sourceId) as any).setData(featureCollection);
-    } else {
-      mapInstance.addSource(sourceId, {
-        type: "geojson",
-        data: featureCollection,
-      });
-
-      // Green filled polygon for saved sites
-      mapInstance.addLayer({
-        id: fillLayerId,
-        type: "fill",
-        source: sourceId,
-        paint: {
-          "fill-color": "#10B981",
-          "fill-opacity": 0.35,
-        },
-      });
-
-      // Outline border
-      mapInstance.addLayer({
-        id: lineLayerId,
-        type: "line",
-        source: sourceId,
-        paint: {
-          "line-color": "#047857",
-          "line-width": 2.5,
-        },
-      });
-
-      // Polygon click event -> Open Site Detail Drawer
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mapInstance.on("click", fillLayerId, (e: any) => {
-        const feature = e.features?.[0];
-        if (feature && feature.properties) {
-          const clickedId = feature.properties.id;
-          const foundSite = sitesList.find((s) => s.id === clickedId);
-          if (foundSite) {
-            setSelectedSite(foundSite);
-            setIsDrawerOpen(true);
-          }
-        }
-      });
-
-      // Cursor styling
-      mapInstance.on("mouseenter", fillLayerId, () => {
-        mapInstance.getCanvas().style.cursor = "pointer";
-      });
-      mapInstance.on("mouseleave", fillLayerId, () => {
-        mapInstance.getCanvas().style.cursor = "";
-      });
-    }
+  const handleSelectSite = useCallback((site: MapSite) => {
+    setSelectedSite(site);
+    setIsDrawerOpen(true);
   }, []);
+
+  const renderSavedSitesLayer = useCallback(
+    (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mapInstance: any,
+      sitesList: MapSite[]
+    ) => {
+      applySitesLayer(mapInstance, sitesList, sitesRef, handleSelectSite);
+    },
+    [handleSelectSite]
+  );
 
   // Fetch sites and projects using safe React 19 pattern
   useEffect(() => {
@@ -368,68 +587,14 @@ function MapViewport() {
           attributionControl: true,
         });
 
-        // Add Mapbox Draw (polygon & trash controls only)
+        // Add Mapbox Draw (polygon & trash controls only) with high-contrast active LineString tracing styles
         const draw = new MapboxDraw({
           displayControlsDefault: false,
           controls: {
             polygon: true,
             trash: true,
           },
-          styles: [
-            // Active drawing fill
-            {
-              id: "gl-draw-polygon-fill-active",
-              type: "fill",
-              filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "true"]],
-              paint: {
-                "fill-color": "#EBF1B1",
-                "fill-opacity": 0.3,
-              },
-            },
-            // Active drawing stroke
-            {
-              id: "gl-draw-polygon-stroke-active",
-              type: "line",
-              filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "true"]],
-              paint: {
-                "line-color": "#3D422E",
-                "line-width": 2.5,
-                "line-dasharray": [2, 2],
-              },
-            },
-            // Static polygon fill
-            {
-              id: "gl-draw-polygon-fill-static",
-              type: "fill",
-              filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "false"]],
-              paint: {
-                "fill-color": "#10B981",
-                "fill-opacity": 0.25,
-              },
-            },
-            // Static polygon stroke
-            {
-              id: "gl-draw-polygon-stroke-static",
-              type: "line",
-              filter: ["all", ["==", "$type", "Polygon"], ["==", "active", "false"]],
-              paint: {
-                "line-color": "#10B981",
-                "line-width": 2,
-              },
-            },
-            // Vertex points
-            {
-              id: "gl-draw-polygon-and-line-vertex-active",
-              type: "circle",
-              filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"]],
-              paint: {
-                "circle-radius": 6,
-                "circle-color": "#EBF1B1",
-                "circle-stroke-width": 2,
-                "circle-stroke-color": "#3D422E",
-              },
-            },
-          ],
+          styles: DRAW_STYLES,
         });
 
         map.addControl(draw, "top-left");
@@ -460,13 +625,15 @@ function MapViewport() {
           setDrawnHectares(0);
         });
 
-        // When style loads, add saved sites layer and focus camera
-        map.on("load", () => {
-          renderSavedSitesLayer(map, sites);
-          if (sites.length > 0) {
-            focusCamera(map, sites, targetProjectId, targetSiteId);
+        // When style or map finishes loading, render saved sites layer and focus camera
+        const onInitialLoad = () => {
+          renderSavedSitesLayer(map, sitesRef.current);
+          if (sitesRef.current.length > 0) {
+            focusCamera(map, sitesRef.current, targetProjectId, targetSiteId);
           }
-        });
+        };
+
+        onMapStyleReady(map, onInitialLoad);
       } catch (err) {
         console.error("Mapbox initialization error:", err);
       }
@@ -482,16 +649,61 @@ function MapViewport() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customToken, activeLayer]);
+  }, [customToken]);
+
+  // Handle smooth layer switching between Light and Satellite without resetting map or camera
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (currentLayerRef.current === activeLayer) return;
+    currentLayerRef.current = activeLayer;
+
+    const effectiveToken = customToken || process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+    const styleToUse = effectiveToken
+      ? activeLayer === "satellite"
+        ? "mapbox://styles/mapbox/satellite-streets-v12"
+        : "mapbox://styles/mapbox/light-v11"
+      : activeLayer === "satellite"
+        ? OPEN_SATELLITE_STYLE
+        : OPEN_LIGHT_STYLE;
+
+    // Switch style smoothly preserving camera position and zoom
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    map.setStyle(styleToUse as any);
+
+    const onStyleLoad = () => {
+      // Re-render saved sites on top of new style
+      renderSavedSitesLayer(map, sitesRef.current);
+
+      // Re-attach MapboxDraw so its drawing layers exist in new style
+      if (drawRef.current) {
+        try {
+          if (map.hasControl && map.hasControl(drawRef.current)) {
+            map.removeControl(drawRef.current);
+          }
+          map.addControl(drawRef.current, "top-left");
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    onMapStyleReady(map, onStyleLoad);
+  }, [activeLayer, customToken, renderSavedSitesLayer]);
 
   // Update map source and camera whenever sites or target search params change
   useEffect(() => {
-    if (mapRef.current && mapRef.current.isStyleLoaded()) {
-      renderSavedSitesLayer(mapRef.current, sites);
+    const map = mapRef.current;
+    if (!map) return;
+
+    const updateMapSites = () => {
+      renderSavedSitesLayer(map, sites);
       if (sites.length > 0) {
-        focusCamera(mapRef.current, sites, targetProjectId, targetSiteId);
+        focusCamera(map, sites, targetProjectId, targetSiteId);
       }
-    }
+    };
+
+    onMapStyleReady(map, updateMapSites);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sites, targetProjectId, targetSiteId]);
 

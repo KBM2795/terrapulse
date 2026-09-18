@@ -74,6 +74,9 @@ export default function ProjectDetailPage() {
 
     try {
       await deleteProject(project.id);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("projects-updated"));
+      }
       router.push("/projects");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to delete project";

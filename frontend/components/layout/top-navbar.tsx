@@ -33,8 +33,14 @@ export function TopNavbar({ onToggleMobileMenu }: TopNavbarProps) {
       const res = await api.post("/api/dev/seed");
       const msg = res.data?.message || "Demo Data Seeded into PostgreSQL";
       setSeedMessage(msg);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("projects-updated"));
+      }
     } catch {
       setSeedMessage("Demo Data Seeded (2 Projects, 3 Sites, 12-Month Analytics)");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("projects-updated"));
+      }
     }
     setSeedNotice(true);
     setTimeout(() => setSeedNotice(false), 3500);

@@ -72,6 +72,9 @@ export default function ProjectsPage() {
   const handleRefresh = () => {
     setIsRefreshing(true);
     setRefreshIndex((prev) => prev + 1);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("projects-updated"));
+    }
   };
 
   const handleSeed = async () => {

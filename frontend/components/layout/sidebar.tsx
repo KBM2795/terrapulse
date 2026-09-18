@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -14,6 +14,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
+import { api } from "@/lib/api";
+import { ProjectData } from "@/lib/projects";
 
 interface SidebarProps {
   mobileOpen?: boolean;
@@ -23,6 +25,58 @@ interface SidebarProps {
 export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const [activeProjectsCount, setActiveProjectsCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!user) return;
+
+    api
+      .get<{ success: boolean; data: ProjectData[] }>("/api/projects")
+      .then((res) => {
+        if (!ignore && res.data?.data && Array.isArray(res.data.data)) {
+          const count = res.data.data.filter(
+            (p) => (p.status || "").toLowerCase() === "active"
+          ).length;
+          setActiveProjectsCount(count);
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem("terrapulse_active_projects", String(count));
+          }
+        }
+      })
+      .catch(() => {
+        // Retain existing count on transient network issue
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [user, pathname]);
+
+  useEffect(() => {
+    const handleProjectsUpdated = () => {
+      if (!user) return;
+      api
+        .get<{ success: boolean; data: ProjectData[] }>("/api/projects")
+        .then((res) => {
+          if (res.data?.data && Array.isArray(res.data.data)) {
+            const count = res.data.data.filter(
+              (p) => (p.status || "").toLowerCase() === "active"
+            ).length;
+            setActiveProjectsCount(count);
+            if (typeof window !== "undefined") {
+              sessionStorage.setItem("terrapulse_active_projects", String(count));
+            }
+          }
+        })
+        .catch(() => {});
+    };
+
+    window.addEventListener("projects-updated", handleProjectsUpdated);
+    return () => {
+      window.removeEventListener("projects-updated", handleProjectsUpdated);
+    };
+  }, [user]);
 
   const navItems = [
     {
@@ -35,7 +89,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
       label: "Projects",
       href: "/projects",
       icon: FolderKanban,
-      badge: "2 Active",
+      badge: activeProjectsCount !== null ? `${activeProjectsCount} Active` : null,
     },
     {
       label: "Geospatial Map",
@@ -132,6 +186,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
 
                   {item.badge && (
                     <span
+                      suppressHydrationWarning
                       className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         isActive
                           ? "bg-[#EBF1B1] dark:bg-[#161A12] text-[#3D422E] dark:text-[#EBF1B1]"
