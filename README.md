@@ -1,13 +1,26 @@
 # 🌍 TerraPulse — Environmental Intelligence Platform
 
-[![Next.js 16](https://img.shields.io/badge/Frontend-Next.js%2016%20(Turbopack)-black?logo=next.js)](frontend)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](backend)
+[![Frontend Live](https://img.shields.io/badge/Frontend-Live%20on%20Vercel-black?logo=vercel)](https://terrapulse-one.vercel.app/)
+[![Backend Live](https://img.shields.io/badge/Backend-Live%20on%20Render-46E3B7?logo=render)](https://terrapulse-gibu.onrender.com/docs)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Public%20Repository-181717?logo=github)](https://github.com/KBM2795/terrapulse)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16%20Turbopack-black?logo=next.js)](frontend)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi)](backend)
 [![PostgreSQL + PostGIS](https://img.shields.io/badge/Spatial%20DB-PostgreSQL%20%2B%20PostGIS-336791?logo=postgresql)](backend)
 [![Mapbox GL](https://img.shields.io/badge/Mapping-Mapbox%20GL%20%2B%20Turf.js-blue?logo=mapbox)](frontend)
-[![Tailwind CSS v4](https://img.shields.io/badge/Design-Tailwind%20v4%20(Apple%20Style)-38B2AC?logo=tailwind-css)](frontend)
 [![CI Status](https://img.shields.io/badge/CI-Passing-brightgreen?logo=github-actions)](.github)
 
 > **TerraPulse** is an enterprise-grade ecological asset monitoring and environmental intelligence platform. Designed for carbon offset developers, biodiversity registries, and land managers, it pairs real-time PostGIS polygon boundary ingestion with geodesic Turf.js area calculations, an automated Environmental Health Index (EHI) scoring engine, and an Apple-inspired visual aesthetic.
+
+---
+
+## 🌐 Live Demo & Repository Links
+
+| Resource | URL | Details / Visibility |
+| :--- | :--- | :--- |
+| **Frontend Web App** | [https://terrapulse-one.vercel.app/](https://terrapulse-one.vercel.app/) | `Live on Vercel` |
+| **Backend REST API** | [https://terrapulse-gibu.onrender.com/](https://terrapulse-gibu.onrender.com/) | `Live on Render` |
+| **Interactive API Docs** | [https://terrapulse-gibu.onrender.com/docs](https://terrapulse-gibu.onrender.com/docs) | `Swagger UI` |
+| **GitHub Repository** | [https://github.com/KBM2795/terrapulse](https://github.com/KBM2795/terrapulse) | `Public` |
 
 ---
 
