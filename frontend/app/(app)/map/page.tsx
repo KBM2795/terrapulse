@@ -208,39 +208,12 @@ const DRAW_STYLES = [
     ],
     paint: {
       "circle-radius": 5,
-      "circle-color": "#FFFFFF",
+      "circle-color": "#161212ff",
       "circle-stroke-width": 2,
       "circle-stroke-color": "#3D422E",
     },
   },
 ];
-
-// Reliable style loader that handles styledata, idle, and load without deadlocks
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function onMapStyleReady(mapInstance: any, callback: () => void) {
-  if (!mapInstance) return;
-
-  if (mapInstance.isStyleLoaded()) {
-    callback();
-    return;
-  }
-
-  let executed = false;
-  const runOnce = () => {
-    if (executed) return;
-    if (mapInstance.isStyleLoaded()) {
-      executed = true;
-      mapInstance.off("styledata", runOnce);
-      mapInstance.off("idle", runOnce);
-      mapInstance.off("load", runOnce);
-      callback();
-    }
-  };
-
-  mapInstance.on("styledata", runOnce);
-  mapInstance.on("idle", runOnce);
-  mapInstance.on("load", runOnce);
-}
 
 // Render or update the saved sites GeoJSON source & layers (pure rendering without camera override)
 function applySitesLayer(
@@ -253,9 +226,17 @@ function applySitesLayer(
   if (!mapInstance) return;
 
   if (!mapInstance.isStyleLoaded()) {
-    onMapStyleReady(mapInstance, () => {
-      applySitesLayer(mapInstance, sitesList, sitesRef, onSelectSite);
-    });
+    const handleStyleReady = () => {
+      if (mapInstance.isStyleLoaded()) {
+        mapInstance.off("styledata", handleStyleReady);
+        mapInstance.off("idle", handleStyleReady);
+        mapInstance.off("style.load", handleStyleReady);
+        applySitesLayer(mapInstance, sitesList, sitesRef, onSelectSite);
+      }
+    };
+    mapInstance.on("styledata", handleStyleReady);
+    mapInstance.on("idle", handleStyleReady);
+    mapInstance.on("style.load", handleStyleReady);
     return;
   }
 
@@ -265,61 +246,43 @@ function applySitesLayer(
 
   const featureCollection = buildSitesFeatureCollection(sitesList);
 
-  const existingSource = mapInstance.getSource(sourceId);
-  if (existingSource) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (existingSource as any).setData(featureCollection);
-  } else {
-    mapInstance.addSource(sourceId, {
-      type: "geojson",
-      data: featureCollection,
-    });
+  try {
+    const existingSource = mapInstance.getSource(sourceId);
+    if (existingSource) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (existingSource as any).setData(featureCollection);
+    } else {
+      mapInstance.addSource(sourceId, {
+        type: "geojson",
+        data: featureCollection,
+      });
+    }
 
-    // Green filled polygon for saved sites
-    mapInstance.addLayer({
-      id: fillLayerId,
-      type: "fill",
-      source: sourceId,
-      paint: {
-        "fill-color": "#10B981",
-        "fill-opacity": 0.35,
-      },
-    });
+    if (!mapInstance.getLayer(fillLayerId)) {
+      mapInstance.addLayer({
+        id: fillLayerId,
+        type: "fill",
+        source: sourceId,
+        paint: {
+          "fill-color": "#10B981",
+          "fill-opacity": 0.35,
+        },
+      });
+    }
 
-    // High-contrast outline border (emerald-lime vivid glow that pops against satellite imagery)
-    mapInstance.addLayer({
-      id: lineLayerId,
-      type: "line",
-      source: sourceId,
-      paint: {
-        "line-color": "#34D399",
-        "line-width": 3,
-      },
-    });
-  }
-
-  // Ensure layers exist if source was preserved across style switch
-  if (!mapInstance.getLayer(fillLayerId) && mapInstance.getSource(sourceId)) {
-    mapInstance.addLayer({
-      id: fillLayerId,
-      type: "fill",
-      source: sourceId,
-      paint: {
-        "fill-color": "#10B981",
-        "fill-opacity": 0.35,
-      },
-    });
-  }
-  if (!mapInstance.getLayer(lineLayerId) && mapInstance.getSource(sourceId)) {
-    mapInstance.addLayer({
-      id: lineLayerId,
-      type: "line",
-      source: sourceId,
-      paint: {
-        "line-color": "#34D399",
-        "line-width": 3,
-      },
-    });
+    if (!mapInstance.getLayer(lineLayerId)) {
+      mapInstance.addLayer({
+        id: lineLayerId,
+        type: "line",
+        source: sourceId,
+        paint: {
+          "line-color": "#34D399",
+          "line-width": 3,
+        },
+      });
+    }
+  } catch (err) {
+    console.error("Error applying sites layer:", err);
   }
 
   // Polygon click event -> Open Site Detail Drawer
@@ -633,7 +596,12 @@ function MapViewport() {
           }
         };
 
-        onMapStyleReady(map, onInitialLoad);
+        if (map.isStyleLoaded()) {
+          onInitialLoad();
+        } else {
+          map.once("load", onInitialLoad);
+          map.once("style.load", onInitialLoad);
+        }
       } catch (err) {
         console.error("Mapbox initialization error:", err);
       }
@@ -688,7 +656,27 @@ function MapViewport() {
       }
     };
 
-    onMapStyleReady(map, onStyleLoad);
+    // Listen for the new style to finish loading before re-rendering
+    map.once("style.load", onStyleLoad);
+    map.once("idle", onStyleLoad);
+
+    // Fallback timers to ensure plots render even if event ordering varies
+    const t1 = setTimeout(onStyleLoad, 300);
+    const t2 = setTimeout(onStyleLoad, 800);
+
+    // Reload the plots again as requested when switching view type
+    fetchMapData()
+      .then((data) => {
+        setSites(data.sites);
+      })
+      .catch(() => {});
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      map.off("style.load", onStyleLoad);
+      map.off("idle", onStyleLoad);
+    };
   }, [activeLayer, customToken, renderSavedSitesLayer]);
 
   // Update map source and camera whenever sites or target search params change
@@ -703,7 +691,12 @@ function MapViewport() {
       }
     };
 
-    onMapStyleReady(map, updateMapSites);
+    if (map.isStyleLoaded()) {
+      updateMapSites();
+    } else {
+      map.once("style.load", updateMapSites);
+      map.once("idle", updateMapSites);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sites, targetProjectId, targetSiteId]);
 
