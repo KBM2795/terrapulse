@@ -1,0 +1,13 @@
+.next
+node_modules
+dist
+build
+out
+.turbo
+*.ico
+*.png
+*.jpg
+*.jpeg
+*.svg
+package-lock.json
+.husky/_
